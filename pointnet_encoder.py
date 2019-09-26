@@ -24,8 +24,8 @@ class TransformationNet(nn.Module):
 
 
     def forward(self, x):
+        # x shape is Batch * N * 3
         num_points = x.shape[1]
-        # TODO: I don't understand the need for this transpose????
         x = x.transpose(2, 1)
         x = F.relu(self.bn_1(self.conv_1(x)))
         x = F.relu(self.bn_2(self.conv_2(x)))

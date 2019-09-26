@@ -6,8 +6,8 @@ import torch
 import numpy as np
 
 class ShapeNetDataSet(data.Dataset):
-    NUM_CLASSIFICATION_CLASSES = 16
-    NUM_SEGMENTATION_CLASSES = 50
+    NUM_CLASSIFICATION_CLASSES = 2
+    # NUM_SEGMENTATION_CLASSES = 50
     POINT_DIMENSION = 3
 
     def __init__(self, dataset_dir, num_of_points=2048, train=True):
