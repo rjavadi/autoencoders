@@ -1,8 +1,11 @@
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
+
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-import os
 import argparse
 from pointnet_encoder import ClassificationPointNet
 from dataset import ShapeNetDataSet
@@ -20,7 +23,7 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
 
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=True, )
 
-    model = ClassificationPointNet(num_classes=2)
+    model = ClassificationPointNet(num_classes=train_dataset.NUM_CLASSIFICATION_CLASSES)
 
     if torch.cuda.is_available():
         model.cuda()
@@ -62,6 +65,8 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             )
             loss = F.nll_loss(preds, targets) + 0.001 * regularization_loss
             epoch_train_loss.append(loss.cpu().item())
+            epoch_train_loss.append(loss.item())
+
             loss.backward()
             optimizer.step()
             preds = preds.max(1)[1]
@@ -81,6 +86,7 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             preds, feature_transform = model(points)
             loss = F.nll_loss(preds, targets)
             epoch_test_loss.append(loss.cpu().item())
+            epoch_test_loss.append(loss.item())
             preds = preds.data.max(1)[1]
             corrects = preds.eq(targets.data).cpu().sum()
             accuracy = corrects.item() / float(batch_size)
@@ -108,20 +114,21 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             # plot_losses(train_loss, test_loss, save_to_file=os.path.join(output_dir, 'loss_plot.png'))
             # plot_accuracies(train_acc, test_acc, save_to_file=os.path.join(output_dir, 'accuracy_plot.png'))
 
-    if __name__ == '__main__':
-        parser = argparse.ArgumentParser()
-        parser.add_argument('dataset_folder', type=str, help='path to the dataset folder')
-        parser.add_argument('output_folder', type=str, help='output folder')
-        parser.add_argument('--number_of_points', type=int, default=2500, help='number of points per cloud')
-        parser.add_argument('--batch_size', type=int, default=32, help='batch size')
-        parser.add_argument('--epochs', type=int, default=20, help='number of epochs')
-        parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
+if __name__ == '__main__':
+    print("main***********")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('dataset_folder', type=str, help='path to the dataset folder')
+    parser.add_argument('output_dir', type=str, help='output folder')
+    parser.add_argument('--number_of_points', type=int, default=2500, help='number of points per cloud')
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+    parser.add_argument('--epochs', type=int, default=20, help='number of epochs')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
 
-        args = parser.parse_args()
+    args = parser.parse_args()
 
-        train(dataset_dir=args.dataset_folder,
-              num_of_points=args.number_of_points,
-              batch_size=args.batch_size,
-              epochs=args.epochs,
-              learning_rate=args.learning_rate,
-              output_dir=args.output_folder)
+    train(dataset_dir=args.dataset_folder,
+          num_of_points=args.number_of_points,
+          batch_size=args.batch_size,
+          epochs=args.epochs,
+          learning_rate=args.learning_rate,
+          output_dir=args.output_dir)
