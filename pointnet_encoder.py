@@ -2,12 +2,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# implementation details in this link: https://www.qwertee.io/blog/deep-learning-with-point-clouds/
+
+''' A shared MLP is used to learn a spatial encoding for each point.
+    These shared MLP can be identically implemented here by using a 1D convolution with a kernel size 1.
+    The implementation given below can be used both for the input and feature transforms simply by 
+    specifying the expected output dimension (respectively 3 and 64)'''
+
 class TransformationNet(nn.Module):
 
     def __init__(self, input_dim, output_dim):
         super(TransformationNet, self).__init__()
         self.output_dim = output_dim
 
+        # Shared MLP
         self.conv_1 = nn.Conv1d(input_dim, 64, 1)
         self.conv_2 = nn.Conv1d(64, 128, 1)
         self.conv_3 = nn.Conv1d(128, 1024, 1)
@@ -17,6 +25,8 @@ class TransformationNet(nn.Module):
         self.bn_3 = nn.BatchNorm1d(1024)
         self.bn_4 = nn.BatchNorm1d(512)
         self.bn_5 = nn.BatchNorm1d(256)
+
+        # Fully connected layers are used to project the result of the max pooling to the expected matrix dimensions
 
         self.fc_1 = nn.Linear(1024, 512)
         self.fc_2 = nn.Linear(512, 256)
@@ -87,6 +97,7 @@ class BasePointNet(nn.Module):
         x = F.relu(self.bn_5(self.conv_5(x)))
         x = nn.MaxPool1d(num_points)(x)
         x = x.view(-1, 1024)
+
 
         if self.return_local_features:
             x = x.view(-1, 1024, 1).repeat(1, 1, num_points)
