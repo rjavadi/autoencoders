@@ -128,3 +128,24 @@ class ClassificationPointNet(nn.Module):
         x = self.dropout_1(x)
 
         return F.log_softmax(self.fc_3(x), dim=1), feature_transform
+
+class PCAE(nn.Module):
+    def __init__(self, num_of_points, dropout=0.3, point_dimension=3):
+        super(PCAE, self).__init__()
+        self.num_of_points = num_of_points
+        self.base_pointnet = BasePointNet(return_local_features=False, point_dimension=point_dimension)
+        self.fc_1 = nn.Linear(1024, 1024)
+        self.fc_2 = nn.Linear(1024, 1024)
+        self.fc_3 = nn.Linear(1024, num_of_points * 3)
+
+        self.bn_1 = nn.BatchNorm1d(1024)
+        self.bn_2 = nn.BatchNorm1d(1024)
+
+    def forward(self, x):
+        x, feature_transform = self.base_pointnet(x)
+
+        x = F.relu(self.bn_1(self.fc_1(x)))
+        x = F.relu(self.bn_2(self.fc_2(x)))
+        x = self.fc_3(x)
+        x.view(-1, self.num_of_points * 3)
+        return x
