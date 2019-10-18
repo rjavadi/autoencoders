@@ -27,6 +27,7 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
     # model = ClassificationPointNet(num_classes=train_dataset.NUM_CLASSIFICATION_CLASSES)
 
     model = PCAE(num_of_points)
+    print(model)
     ch_distance = ChamferDistance()
     if torch.cuda.is_available():
         model.cuda()
