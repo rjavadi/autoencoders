@@ -43,8 +43,8 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
 
     train_loss = []
     test_loss = []
-    train_acc = []
-    test_acc = []
+    # train_acc = []
+    # test_acc = []
 
     for epoch in mb:
         epoch_train_loss = []
@@ -103,17 +103,19 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
                      % (epoch,
                         np.mean(epoch_train_loss),
                         np.mean(epoch_test_loss)))
-            if test_acc and np.mean(epoch_test_acc) > np.max(test_acc):
+            if test_loss and np.mean(epoch_test_loss) < np.min(test_loss):
                 torch.save(model.state_dict(), os.path.join(output_dir, 'shapenet_classification_model.pth'))
+            # if test_acc and np.mean(epoch_test_acc) > np.max(test_acc):
+            #     torch.save(model.state_dict(), os.path.join(output_dir, 'shapenet_classification_model.pth'))
 
             with open(os.path.join(output_dir, 'training_log.csv'), 'a') as fid:
                 fid.write('%s,%s,%s\n' % (epoch,
-                                                np.mean(epoch_train_loss),
-                                                np.mean(epoch_test_loss)))
+                                          np.mean(epoch_train_loss),
+                                          np.mean(epoch_test_loss)))
             train_loss.append(np.mean(epoch_train_loss))
             test_loss.append(np.mean(epoch_test_loss))
-            train_acc.append(np.mean(epoch_train_acc))
-            test_acc.append(np.mean(epoch_test_acc))
+            # train_acc.append(np.mean(epoch_train_acc))
+            # test_acc.append(np.mean(epoch_test_acc))
 
             # implemented in utils using matplot
             # plot_losses(train_loss, test_loss, save_to_file=os.path.join(output_dir, 'loss_plot.png'))
