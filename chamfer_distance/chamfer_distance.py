@@ -10,7 +10,9 @@ class ChamferDistanceFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, xyz1, xyz2):
         batchsize, n, _ = xyz1.size()
-        _, m, _ = xyz2.size()
+        print('xyz1 size:', xyz1.size())
+        _, m, _  = xyz2.size()
+        print('xyz2 size:', xyz2.size())
         xyz1 = xyz1.contiguous()
         xyz2 = xyz2.contiguous()
         dist1 = torch.zeros(batchsize, n)
@@ -55,3 +57,4 @@ class ChamferDistanceFunction(torch.autograd.Function):
 class ChamferDistance(torch.nn.Module):
     def forward(self, xyz1, xyz2):
         return ChamferDistanceFunction.apply(xyz1, xyz2)
+

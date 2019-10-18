@@ -147,5 +147,6 @@ class PCAE(nn.Module):
         x = F.relu(self.bn_1(self.fc_1(x)))
         x = F.relu(self.bn_2(self.fc_2(x)))
         x = self.fc_3(x)
-        x.view(-1, self.num_of_points * 3)
+        print('AE output size:', x.size())
+        x = x.view(-1, self.num_of_points, 3)
         return x
