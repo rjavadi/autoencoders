@@ -37,8 +37,8 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
-    with open(os.path.join(output_dir, 'training_log.csv'), 'w+') as fid:
-        fid.write('train_loss,test_loss,train_accuracy,test_accuracy\n')
+    with open(os.path.join(output_dir, 'training_log_2.csv'), 'w+') as fid:
+        fid.write('epoch,train_loss,test_loss\n')
 
     mb = master_bar(range(epochs))
 

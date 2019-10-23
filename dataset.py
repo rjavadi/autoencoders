@@ -57,7 +57,6 @@ class ShapeNetDataSet(data.Dataset):
     def __len__(self):
         return len(self.files)
 
-    # TODO: understand what it does.
     @staticmethod
     def prepare_data(point_file,
                      number_of_points=None,
