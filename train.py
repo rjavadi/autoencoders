@@ -7,10 +7,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import argparse
+from configparser import ConfigParser
 from pointnet_encoder import ClassificationPointNet, PCAE
 from dataset import ShapeNetDataSet
 from fastprogress import master_bar, progress_bar
 from chamfer_distance import ChamferDistance
+
+config_file_name = "config.ini"
 
 
 def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_dir):
@@ -133,6 +136,21 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
 
     args = parser.parse_args()
+
+    #set values in conifg file
+    cfgfile = open(config_file_name, 'w')
+    config = ConfigParser()
+    config.set('train', 'dataset_folder', args.dataset_folder)
+    config.set('train', 'output_dir', args.output_dir)
+    config.set('train', 'number_of_points', args.number_of_points)
+    config.set('train', 'batch_size', args.batch_size)
+    config.set('train', 'epochs', args.epochs)
+    config.set('train', 'learning_rate', args.learning_rate)
+    config.write(cfgfile)
+    cfgfile.close()
+
+
+
 
     train(dataset_dir=args.dataset_folder,
           num_of_points=args.number_of_points,
