@@ -45,4 +45,4 @@ if __name__ == "__main__":
     output = output.view(-1, 3)
     np.savetxt(os.path.join(ouputdir, '1ac6531a337de85f2f7628d6bf38bcc4.pts'), output.detach().cpu().numpy(), delimiter=' ', fmt='%1.4e')
     # visualize.visualize_pcl(point_array=output.detach().cpu().numpy())
-    visualize.visualize_pcl(point_file='output/1ac6531a337de85f2f7628d6bf38bcc4.pts')
+    visualize.visualize_pcl(point_file=os.path.join(ouputdir, '1ac6531a337de85f2f7628d6bf38bcc4.pts'))

@@ -44,11 +44,7 @@ class ShapeNetDataSet(data.Dataset):
                                   folder,
                                   'points',
                                   '%s.pts' % file)
-        # TODO: do not remove it for now
-        # segmentation_label_file = os.path.join(self.dataset_folder,
-        #                                        folder,
-        #                                        'points_label',
-        #                                        '%s.seg' % file)
+
         point_cloud_class = self.folders_to_classes_mapping[folder]
         return self.prepare_data(point_file,
                                  self.number_of_points,
