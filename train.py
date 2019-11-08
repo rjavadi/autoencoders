@@ -4,11 +4,10 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 import torch
 import torch.optim as optim
-import torch.nn.functional as F
 import numpy as np
 import argparse
 from configparser import ConfigParser
-from pointnet_encoder import ClassificationPointNet, PCAE
+from model.pointnet_encoder import PCAE
 from dataset import ShapeNetDataSet
 from fastprogress import master_bar, progress_bar
 from chamfer_distance import ChamferDistance
@@ -109,14 +108,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     #set values in conifg file
-    cfgfile = open(config_file_name, 'w')
+    cfgfile = open(config_file_name, 'r+')
     config = ConfigParser()
+    config.read(config_file_name)
     config.set('train', 'dataset_folder', args.dataset_folder)
     config.set('train', 'output_dir', args.output_dir)
-    config.set('train', 'number_of_points', args.number_of_points)
-    config.set('train', 'batch_size', args.batch_size)
-    config.set('train', 'epochs', args.epochs)
-    config.set('train', 'learning_rate', args.learning_rate)
+    config.set('train', 'number_of_points', str(args.number_of_points))
+    config.set('train', 'batch_size', str(args.batch_size))
+    config.set('train', 'epochs', str(args.epochs))
+    config.set('train', 'learning_rate', str(args.learning_rate))
     config.write(cfgfile)
     cfgfile.close()
 
