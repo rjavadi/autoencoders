@@ -60,6 +60,12 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             optimizer.zero_grad()
             model = model.train()
             reconstructed = model(points)
+            rand = np.random.randint(0, 100)
+            if rand < 10:
+                np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_train.pts'),
+                           points[0].detach().cpu().numpy(),
+                           delimiter=' ', fmt='%1.4e')
+
             dist1, dist2 = ch_distance(points, reconstructed)
             loss = (torch.mean(dist1)) + (torch.mean(dist2))
             epoch_train_loss.append(loss.cpu().item())
@@ -75,10 +81,19 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             points, targets = data
             if torch.cuda.is_available():
                 points, targets = points.cuda(), targets.cuda()
+
+
             model = model.eval()
             reconstructed = model(points)
             dist1, dist2 = ch_distance(points, reconstructed)
             loss = (torch.mean(dist1)) + (torch.mean(dist2))
+            if loss > 0.5:
+                np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_val_ground.pts'),
+                           points.detach().cpu().numpy(),
+                           delimiter=' ', fmt='%1.4e')
+                np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_val_constructed.pts'),
+                           reconstructed.detach().cpu().numpy(),
+                           delimiter=' ', fmt='%1.4e')
             epoch_test_loss.append(loss.cpu().item())
             epoch_test_loss.append(loss.item())
             mb.write('Epoch %s: train loss: %s, val loss: %s'

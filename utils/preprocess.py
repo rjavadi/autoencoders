@@ -9,16 +9,24 @@ config_file_name = '../config.ini'
 class TextPreprocess(object):
     def __init__(self, inputs_list, swap_model_category=False):
         self.__captions = inputs_list['captions']
-        self.__word_to_idx = inputs_list['word_to_idx']
-        self.__idx_to_word = inputs_list['idx_to_word']
-        self.__max_caption_length = (inputs_list['max_length'] if inputs_list['max_length'] != 0
-                                     else self.compute_max_caption_length())
-        self.__vocab_size = len(self.__word_to_idx) + 1
-        self.__input_shape = (self.__max_caption_length)
-        self.__dtype = np.int32
-        self.__swap_model_category = swap_model_category
+        self.word2index = {}
+        self.word2count = {}
+        self.index2word = {0: "UNK"}
+        self.n_words = 1
 
-        self.print_dataset_info()
+    def add_caption(self, caption):
+        for word in caption:
+            self.add_word(word)
+
+    def add_word(self, word):
+        if word not in self.word2index:
+            self.word2index[word] = self.n_words
+            self.word2count[word] = 1
+            self.index2word[self.n_words] = word
+            self.n_words += 1
+        else:
+            self.word2count[word] +=1
+
 
 def remove_punc(cap_list):
     digits = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
@@ -43,6 +51,8 @@ def clean_text():
     data_frame['tokenized_caption'] = data_frame['tokenized_caption'].apply(remove_punc)
     data_frame.to_csv('captions_processed.csv')
     file.close()
+
+
 
 
 if __name__ == "__main__":
