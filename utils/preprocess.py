@@ -3,6 +3,7 @@ import pandas as pd
 from configparser import ConfigParser
 import pickle, csv
 import string
+import os
 
 config_file_name = '../config.ini'
 
@@ -56,4 +57,9 @@ def clean_text():
 
 
 if __name__ == "__main__":
-    clean_text()
+    # config = ConfigParser()
+    # config.read(config_file_name)
+    # cap_file = config.get('data', 'captions_path')
+    cap_csv = pd.read_csv(os.path.join('../data', 'captions_processed.csv'))
+    cap_csv['raw_label'] = cap_csv['raw_caption']
+    cap_csv.to_csv('../data/captions_processed.csv')

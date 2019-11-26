@@ -117,7 +117,7 @@ if __name__ == '__main__':
     parser.add_argument('output_dir', type=str, help='output folder')
     parser.add_argument('--number_of_points', type=int, default=2500, help='number of points per cloud')
     parser.add_argument('--batch_size', type=int, default=32, help='batch size')
-    parser.add_argument('--epochs', type=int, default=20, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=50, help='number of epochs')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
 
     args = parser.parse_args()
