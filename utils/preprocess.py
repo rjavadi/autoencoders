@@ -29,7 +29,7 @@ class TextPreprocess(object):
             self.word2count[word] +=1
 
 
-def remove_punc(cap_list):
+def remove_punc_list(cap_list):
     digits = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
     cap_list = [x for x in cap_list if x not in string.punctuation]
     for i in range(len(cap_list)):
@@ -37,6 +37,16 @@ def remove_punc(cap_list):
         if cap_list[i] in string.digits and int(cap_list[i]) < 10:
             cap_list[i] = digits[int(cap_list[i])]
     return cap_list
+
+def remove_punc_str(cap: str):
+    import re
+    digits = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
+    translate_dict = dict.fromkeys(string.punctuation, ' ')
+    translate_dict.update(dict(zip(string.digits, digits)))
+    cap = cap.translate(str.maketrans(translate_dict))
+    cap = re.sub(' +', ' ', cap)
+    return cap
+
 
 def clean_text():
     config = ConfigParser()
@@ -49,7 +59,7 @@ def clean_text():
                                         columns=['model_id', 'raw_caption', 'tokenized_caption', 'top_synset',
                                                  'sub_synset', 'top_synset_id', 'sub_synset_id', 'model_attr',
                                                  'text_attr'])
-    data_frame['tokenized_caption'] = data_frame['tokenized_caption'].apply(remove_punc)
+    data_frame['tokenized_caption'] = data_frame['tokenized_caption'].apply(remove_punc_list)
     data_frame.to_csv('captions_processed.csv')
     file.close()
 
@@ -60,6 +70,8 @@ if __name__ == "__main__":
     # config = ConfigParser()
     # config.read(config_file_name)
     # cap_file = config.get('data', 'captions_path')
+    print(remove_punc_str("2 apples, 3 bananas, 4 birds...!"))
     cap_csv = pd.read_csv(os.path.join('../data', 'captions_processed.csv'))
+    # cap_csv['raw_caption'] = cap_csv['raw_caption'].apply(remove_punc_str)
     cap_csv['raw_label'] = cap_csv['raw_caption']
     cap_csv.to_csv('../data/captions_processed.csv')
