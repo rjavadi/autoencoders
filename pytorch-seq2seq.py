@@ -45,6 +45,10 @@ import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
+import pandas as pd
+from torch.utils.tensorboard import SummaryWriter
+from sklearn.model_selection import train_test_split
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -75,103 +79,53 @@ class Lang:
             self.word2count[word] += 1
 
 
-######################################################################
-# The files are all in Unicode, to simplify we will turn Unicode
-# characters to ASCII, make everything lowercase, and trim most
-# punctuation.
-#
-
-# Turn a Unicode string to plain ASCII, thanks to
-# https://stackoverflow.com/a/518232/2809427
-def unicodeToAscii(s):
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', s)
-        if unicodedata.category(c) != 'Mn'
-    )
-
-# Lowercase, trim, and remove non-letter characters
 
 
-def normalizeString(s):
-    s = unicodeToAscii(s.lower().strip())
-    s = re.sub(r"([.!?])", r" \1", s)
-    s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
-    return s
+sys_random = random.SystemRandom()
+
+from configparser import ConfigParser
+config_file_name = 'config.ini'
 
 
-######################################################################
-# To read the data file we will split the file into lines, and then split
-# lines into pairs. The files are all English → Other Language, so if we
-# want to translate from Other Language → English I added the ``reverse``
-# flag to reverse the pairs.
-#
+def caption_file():
+    config = ConfigParser()
+    config.read(config_file_name)
+    return config.get('data', 'captions_path')
 
-def readLangs(lang1, lang2, reverse=False):
+# ROYA: updated this
+def readLangs():
     print("Reading lines...")
 
     # Read the file and split into lines
-    lines = open('data/%s-%s.txt' % (lang1, lang2), encoding='utf-8').\
-        read().strip().split('\n')
+
+    cap_csv = pd.read_csv(caption_file())
+
 
     # Split every line into pairs and normalize
-    pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
+    pairs = list(zip(cap_csv['raw_caption'], cap_csv['raw_label']))
 
     # Reverse pairs, make Lang instances
-    if reverse:
-        pairs = [list(reversed(p)) for p in pairs]
-        input_lang = Lang(lang2)
-        output_lang = Lang(lang1)
-    else:
-        input_lang = Lang(lang1)
-        output_lang = Lang(lang2)
+
+    input_lang = Lang('caps')
+    output_lang = Lang('labs')
 
     return input_lang, output_lang, pairs
 
 
-######################################################################
-# Since there are a *lot* of example sentences and we want to train
-# something quickly, we'll trim the data set to only relatively short and
-# simple sentences. Here the maximum length is 10 words (that includes
-# ending punctuation) and we're filtering to sentences that translate to
-# the form "I am" or "He is" etc. (accounting for apostrophes replaced
-# earlier).
-#
 
-MAX_LENGTH = 10
-
-eng_prefixes = (
-    "i am ", "i m ",
-    "he is", "he s ",
-    "she is", "she s ",
-    "you are", "you re ",
-    "we are", "we re ",
-    "they are", "they re "
-)
-
+MAX_LENGTH = 60
 
 def filterPair(p):
     return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
+        len(p[1].split(' ')) < MAX_LENGTH
 
 
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
 
 
-######################################################################
-# The full process for preparing the data is:
-#
-# -  Read text file and split into lines, split lines into pairs
-# -  Normalize text, filter by length and content
-# -  Make word lists from sentences in pairs
-#
-
-
-
-
 def prepareData(lang1, lang2, reverse=False):
-    input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
+    input_lang, output_lang, pairs = readLangs()
     print("Read %s sentence pairs" % len(pairs))
     pairs = filterPairs(pairs)
     print("Trimmed to %s sentence pairs" % len(pairs))
@@ -186,23 +140,9 @@ def prepareData(lang1, lang2, reverse=False):
 
 
 input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
-print(random.choice(pairs))
+print(sys_random.choice(pairs))
 
 
-
-######################################################################
-# The Encoder
-# -----------
-#
-# The encoder of a seq2seq network is a RNN that outputs some value for
-# every word from the input sentence. For every input word the encoder
-# outputs a vector and a hidden state, and uses the hidden state for the
-# next input word.
-#
-# .. figure:: /_static/img/seq-seq-images/encoder-network.png
-#    :alt:
-#
-#
 
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size):
@@ -221,91 +161,7 @@ class EncoderRNN(nn.Module):
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
-######################################################################
-# The Decoder
-# -----------
-#
-# The decoder is another RNN that takes the encoder output vector(s) and
-# outputs a sequence of words to create the translation.
-#
 
-
-######################################################################
-# Simple Decoder
-# ^^^^^^^^^^^^^^
-#
-# In the simplest seq2seq decoder we use only last output of the encoder.
-# This last output is sometimes called the *context vector* as it encodes
-# context from the entire sequence. This context vector is used as the
-# initial hidden state of the decoder.
-#
-# At every step of decoding, the decoder is given an input token and
-# hidden state. The initial input token is the start-of-string ``<SOS>``
-# token, and the first hidden state is the context vector (the encoder's
-# last hidden state).
-#
-# .. figure:: /_static/img/seq-seq-images/decoder-network.png
-#    :alt:
-#
-#
-
-class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
-        self.hidden_size = hidden_size
-
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden
-
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
-
-######################################################################
-# I encourage you to train and observe the results of this model, but to
-# save space we'll be going straight for the gold and introducing the
-# Attention Mechanism.
-#
-
-
-######################################################################
-# Attention Decoder
-# ^^^^^^^^^^^^^^^^^
-#
-# If only the context vector is passed betweeen the encoder and decoder,
-# that single vector carries the burden of encoding the entire sentence.
-#
-# Attention allows the decoder network to "focus" on a different part of
-# the encoder's outputs for every step of the decoder's own outputs. First
-# we calculate a set of *attention weights*. These will be multiplied by
-# the encoder output vectors to create a weighted combination. The result
-# (called ``attn_applied`` in the code) should contain information about
-# that specific part of the input sequence, and thus help the decoder
-# choose the right output words.
-#
-# .. figure:: https://i.imgur.com/1152PYf.png
-#    :alt:
-#
-# Calculating the attention weights is done with another feed-forward
-# layer ``attn``, using the decoder's input and hidden state as inputs.
-# Because there are sentences of all sizes in the training data, to
-# actually create and train this layer we have to choose a maximum
-# sentence length (input length, for encoder outputs) that it can apply
-# to. Sentences of the maximum length will use all the attention weights,
-# while shorter sentences will only use the first few.
-#
-# .. figure:: /_static/img/seq-seq-images/attention-decoder-network.png
-#    :alt:
-#
-#
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size, dropout_p=0.1, max_length=MAX_LENGTH):
@@ -344,23 +200,7 @@ class AttnDecoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
-######################################################################
-# .. note:: There are other forms of attention that work around the length
-#   limitation by using a relative position approach. Read about "local
-#   attention" in `Effective Approaches to Attention-based Neural Machine
-#   Translation <https://arxiv.org/abs/1508.04025>`__.
-#
-# Training
-# ========
-#
-# Preparing Training Data
-# -----------------------
-#
-# To train, for each pair we will need an input tensor (indexes of the
-# words in the input sentence) and target tensor (indexes of the words in
-# the target sentence). While creating these vectors we will append the
-# EOS token to both sequences.
-#
+
 
 def indexesFromSentence(lang, sentence):
     return [lang.word2index[word] for word in sentence.split(' ')]
@@ -378,35 +218,12 @@ def tensorsFromPair(pair):
     return (input_tensor, target_tensor)
 
 
-######################################################################
-# Training the Model
-# ------------------
-#
-# To train we run the input sentence through the encoder, and keep track
-# of every output and the latest hidden state. Then the decoder is given
-# the ``<SOS>`` token as its first input, and the last hidden state of the
-# encoder as its first hidden state.
-#
-# "Teacher forcing" is the concept of using the real target outputs as
-# each next input, instead of using the decoder's guess as the next input.
-# Using teacher forcing causes it to converge faster but `when the trained
-# network is exploited, it may exhibit
-# instability <http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.378.4095&rep=rep1&type=pdf>`__.
-#
-# You can observe outputs of teacher-forced networks that read with
-# coherent grammar but wander far from the correct translation -
-# intuitively it has learned to represent the output grammar and can "pick
-# up" the meaning once the teacher tells it the first few words, but it
-# has not properly learned how to create the sentence from the translation
-# in the first place.
-#
-# Because of the freedom PyTorch's autograd gives us, we can randomly
-# choose to use teacher forcing or not with a simple if statement. Turn
-# ``teacher_forcing_ratio`` up to use more of it.
-#
 
 teacher_forcing_ratio = 0.5
 
+import datetime
+current_time = str(datetime.datetime.now())
+summary_writer = SummaryWriter(log_dir='logs/' + current_time)
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
@@ -460,6 +277,63 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     return loss.item() / target_length
 
 
+# def train_each_epoch(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH, batch_size=128):
+#     encoder_hidden = encoder.initHidden()
+#
+#     encoder_optimizer.zero_grad()
+#     decoder_optimizer.zero_grad()
+#
+#     input_length = input_tensor.size(0)
+#     target_length = target_tensor.size(0)
+#
+#     encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+#
+#     epoch_loss = 0
+#
+#     n_mini_batch = 106400//128
+#
+#     for i in range(n_mini_batch):
+#
+#
+#     for ei in range(input_length):
+#         encoder_output, encoder_hidden = encoder(
+#             input_tensor[ei], encoder_hidden)
+#         encoder_outputs[ei] = encoder_output[0, 0]
+#
+#     decoder_input = torch.tensor([[SOS_token]], device=device)
+#
+#     decoder_hidden = encoder_hidden
+#
+#     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+#
+#     if use_teacher_forcing:
+#         # Teacher forcing: Feed the target as the next input
+#         for di in range(target_length):
+#             decoder_output, decoder_hidden, decoder_attention = decoder(
+#                 decoder_input, decoder_hidden, encoder_outputs)
+#             loss += criterion(decoder_output, target_tensor[di])
+#             decoder_input = target_tensor[di]  # Teacher forcing
+#
+#     else:
+#         # Without teacher forcing: use its own predictions as the next input
+#         for di in range(target_length):
+#             decoder_output, decoder_hidden, decoder_attention = decoder(
+#                 decoder_input, decoder_hidden, encoder_outputs)
+#             topv, topi = decoder_output.topk(1)
+#             decoder_input = topi.squeeze().detach()  # detach from history as input
+#
+#             loss += criterion(decoder_output, target_tensor[di])
+#             if decoder_input.item() == EOS_token:
+#                 break
+#
+#     loss.backward()
+#
+#     encoder_optimizer.step()
+#     decoder_optimizer.step()
+#
+#     return loss.item() / target_length
+
+
 ######################################################################
 # This is a helper function to print time elapsed and estimated time
 # remaining given the current time and progress %.
@@ -493,7 +367,23 @@ def timeSince(since, percent):
 #
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
+
+# def train_epochs(encoder, decoder, n_epoch, batch_size, print_every=1000, plot_every=100, learning_rate=0.01):
+#     start = time.time()
+#     plot_losses = []
+#     print_loss_total = 0  # Reset every print_every
+#     plot_loss_total = 0  # Reset every plot_every
+#     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
+#     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
 #
+#     pairs_train, pairs_val = train_test_split(pairs, test_size=0.2)
+#     pairs_train, pairs_test = train_test_split(pairs_train, test_size=0.2)
+#
+#     criterion = nn.NLLLoss()
+#
+#     for epoch in range(n_epoch):
+#         # loss = tra
+
 
 def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, learning_rate=0.01):
     start = time.time()
@@ -504,10 +394,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
-    #TODO: here I add torchtext
-
-
-    training_pairs = [tensorsFromPair(random.choice(pairs))
+    training_pairs = [tensorsFromPair(sys_random.choice(pairs))
                       for i in range(n_iters)]
     criterion = nn.NLLLoss()
 
@@ -518,6 +405,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
+        summary_writer.add_scalar('train-loss', loss, iter)
         print_loss_total += loss
         plot_loss_total += loss
 
@@ -544,7 +432,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 #
 
 import matplotlib.pyplot as plt
-plt.switch_backend('agg')
+# plt.switch_backend('agg')
 import matplotlib.ticker as ticker
 import numpy as np
 
@@ -612,7 +500,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 
 def evaluateRandomly(encoder, decoder, n=10):
     for i in range(n):
-        pair = random.choice(pairs)
+        pair = sys_random.choice(pairs)
         print('>', pair[0])
         print('=', pair[1])
         output_words, attentions = evaluate(encoder, decoder, pair[0])
@@ -640,11 +528,11 @@ def evaluateRandomly(encoder, decoder, n=10):
 #    encoder and decoder are initialized and run ``trainIters`` again.
 #
 
-hidden_size = 256
+hidden_size = 320
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
 
-trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
+trainIters(encoder1, attn_decoder1, 8000, print_every=800)
 
 ######################################################################
 #
@@ -667,7 +555,7 @@ evaluateRandomly(encoder1, attn_decoder1)
 #
 
 output_words, attentions = evaluate(
-    encoder1, attn_decoder1, "je suis trop froid .")
+    encoder1, attn_decoder1, "an orange colored chair with a black frame and arm rests")
 plt.matshow(attentions.numpy())
 
 
@@ -703,35 +591,11 @@ def evaluateAndShowAttention(input_sentence):
     showAttention(input_sentence, output_words, attentions)
 
 
-evaluateAndShowAttention("elle a cinq ans de moins que moi .")
+evaluateAndShowAttention("half egg chair red in color with black base ")
 
-evaluateAndShowAttention("elle est trop petit .")
+evaluateAndShowAttention("cabinet is tall made of wood")
 
-evaluateAndShowAttention("je ne crains pas de mourir .")
+evaluateAndShowAttention("this is a gray lamp with four bulbs")
 
-evaluateAndShowAttention("c est un jeune directeur plein de talent .")
+evaluateAndShowAttention("a grey chair with one cushion and wooden arm rests that wall off into solid grey squares particularly box like in appearance")
 
-
-######################################################################
-# Exercises
-# =========
-#
-# -  Try with a different dataset
-#
-#    -  Another language pair
-#    -  Human → Machine (e.g. IOT commands)
-#    -  Chat → Response
-#    -  Question → Answer
-#
-# -  Replace the embeddings with pre-trained word embeddings such as word2vec or
-#    GloVe
-# -  Try with more layers, more hidden units, and more sentences. Compare
-#    the training time and results.
-# -  If you use a translation file where pairs have two of the same phrase
-#    (``I am test \t I am test``), you can use this as an autoencoder. Try
-#    this:
-#
-#    -  Train as an autoencoder
-#    -  Save only the Encoder network
-#    -  Train a new Decoder for translation from there
-#
