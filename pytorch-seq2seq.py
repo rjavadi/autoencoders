@@ -153,6 +153,7 @@ class EncoderRNN(nn.Module):
         self.gru = nn.GRU(hidden_size, hidden_size)
 
     def forward(self, input, hidden):
+        # TODO: question: does it feed in sentences word by word?
         embedded = self.embedding(input).view(1, 1, -1)
         output = embedded
         output, hidden = self.gru(output, hidden)
@@ -368,7 +369,7 @@ def timeSince(since, percent):
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 
-# def train_epochs(encoder, decoder, n_epoch, batch_size, print_every=1000, plot_every=100, learning_rate=0.01):
+# TODO def train_epochs(encoder, decoder, n_epoch, batch_size, print_every=1000, plot_every=100, learning_rate=0.01):
 #     start = time.time()
 #     plot_losses = []
 #     print_loss_total = 0  # Reset every print_every

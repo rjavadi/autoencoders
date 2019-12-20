@@ -108,7 +108,7 @@ PAD_IDX = LABEL.vocab.stoi['<pad>']
 
 criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 
-current_time = str(datetime.datetime.now().timestamp())
+current_time = str(datetime.datetime.now())
 summary_writer = SummaryWriter(log_dir='logs/' + current_time)
 
 
@@ -150,6 +150,7 @@ def eval(model: Seq2Seq, iterator: BucketIterator, criterion: nn.Module, is_test
             trg = batch.raw_label[0]
 
             output = model(src, trg, 0) # turn off teacher forcing
+
             if is_test:
                 emb = model.encoder.forward(src)
                 # print("***EMB***:  ", emb)
