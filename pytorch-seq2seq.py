@@ -92,7 +92,6 @@ def caption_file():
     config.read(config_file_name)
     return config.get('data', 'captions_path')
 
-# ROYA: updated this
 def readLangs():
     print("Reading lines...")
 

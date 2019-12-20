@@ -89,7 +89,7 @@ class EncoderRNN(nn.Module):
 
     def forward(self, input, hidden):
         # input = [input sent len, batch size]
-        embedded = self.embedding(input)
+        embedded = self.embedding(input).view(1, -1, hidden_size)
         # embedded = [src sent len, batch size, emb dim]
 
         output = embedded
@@ -120,11 +120,15 @@ class AttnDecoderRNN(nn.Module):
 
     def forward(self, input, hidden, encoder_outputs):
         embedded = self.embedding(input)
+        # input = [1, 1]
         # embedded = [src sent len, batch size, hid_size]
         # hidden = [1, batch size, hid_size]
         embedded = self.dropout(embedded)
 
-        # Not sure how this concat works
+        # TODO Not sure how this concat works
+        # TODO: Fix this exception: Sizes of tensors must match except in dimension 1. Got 128 and 1 in dimension 0
+        # hidden = [1, batch, hid_size]
+        # embedded = [1, 1, hid_size]
         attn_weights = F.softmax(
             self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
         attn_applied = torch.bmm(attn_weights.unsqueeze(0),
@@ -174,7 +178,7 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
     decoder.train()
     epoch_loss = 0
 
-    encoder_hidden = encoder.initHidden()
+    encoder_hidden = encoder.initHidden(BATCH_SIZE)
     for i, batch in enumerate(iterator):
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
@@ -194,8 +198,9 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
             encoder_outputs[ei] = encoder_output[0, 0]
 
         decoder_input = torch.tensor([[SOS_token]], device=device)
-
+        # encoder_hidden = [1, B, hid_size]
         decoder_hidden = encoder_hidden
+        # encoder_hidden = [1, B, hid_size]
 
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -302,7 +307,7 @@ def epoch_time(start_time: int, end_time: int):
 
 N_EPOCHS = 8
 
-def trainIters(encoder, decoder, n_iters, n_epochs = N_EPOCHS, print_every=1000, plot_every=100, learning_rate=0.01):
+def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_every=100, learning_rate=0.01):
 
     ENCODER_MODEL = 'seq2seq-enc.pt'
     DECODER_MODEL = 'seq2seq-dec.pt'
@@ -373,7 +378,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     with torch.no_grad():
         input_tensor = tensorFromSentence(TEXT, sentence)
         input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
+        encoder_hidden = encoder.initHidden(BATCH_SIZE)
 
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
@@ -445,7 +450,7 @@ hidden_size = 320
 encoder1 = EncoderRNN(len(TEXT.vocab), hidden_size).to(device)
 attn_decoder1 = AttnDecoderRNN(hidden_size, len(LABEL.vocab), dropout_p=0.1).to(device)
 
-trainIters(encoder1, attn_decoder1, 8000, print_every=800)
+trainIters(encoder1, attn_decoder1)
 
 ######################################################################
 #
