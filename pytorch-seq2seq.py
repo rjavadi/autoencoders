@@ -179,22 +179,29 @@ class AttnDecoderRNN(nn.Module):
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, input, hidden, encoder_outputs):
+        # self.embedding(input) = [320], therefore we have to reshape it to be [1, 1, 320]
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
 
+        # embedded[0] = [1, 320]
+        # hidden[0] = [1, 320]
         attn_weights = F.softmax(
             self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
-                                 encoder_outputs.unsqueeze(0))
-
+        # attn_weights = [1,60]
+        # it is batch-first
+        attn_applied = torch.bmm(attn_weights.unsqueeze(0), # [1, 1, 60 = MAX_LEN]
+                                 encoder_outputs.unsqueeze(0)) # [1, 60 = MAX_LEN, 320]
+        # attn_applied = [1, 1, 320]
         output = torch.cat((embedded[0], attn_applied[0]), 1)
         output = self.attn_combine(output).unsqueeze(0)
 
         output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
+        #output = [1, 1, 320]
+        #hidden = [1, 1, 320]
+        output, dec_hid = self.gru(output, hidden)
 
         output = F.log_softmax(self.out(output[0]), dim=1)
-        return output, hidden, attn_weights
+        return output, dec_hid, attn_weights
 
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)
@@ -254,7 +261,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         for di in range(target_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
-            loss += criterion(decoder_output, target_tensor[di])
+            loss += criterion(decoder_output, target_tensor[di]) #target_tensor = [sent_len, 1] , dec_out = [1, vocab_len]
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
