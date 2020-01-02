@@ -43,10 +43,10 @@ def filterPairs(pairs):
 
 
 LABEL = Field(tokenize = 'spacy', lower=True, include_lengths = True, init_token = '<sos>',
-            eos_token = '<eos>', is_target=True)
+            eos_token = '<eos>', is_target=True, batch_first=True)
 
 TEXT = Field(tokenize = 'spacy', lower=True, include_lengths = True, init_token = '<sos>',
-            eos_token = '<eos>', )
+            eos_token = '<eos>', batch_first=True)
 MODEL_ID = RawField()
 
 
@@ -88,9 +88,9 @@ class EncoderRNN(nn.Module):
         self.gru = nn.GRU(hidden_size, hidden_size)
 
     def forward(self, input, hidden):
-        # input = [input sent len, batch size]
-        embedded = self.embedding(input).view(1, -1, hidden_size)
-        # embedded = [src sent len, batch size, emb dim]
+        # input = [batch size]
+        embedded = self.embedding(input).view(BATCH_SIZE, -1, hidden_size)
+        # embedded = [batch size, 1,emb dim]
 
         output = embedded
         output, hidden = self.gru(output, hidden)
@@ -98,8 +98,8 @@ class EncoderRNN(nn.Module):
         # hidden = [1, batch size, hid dim]
         return output, hidden
 
-    def initHidden(self, batch_size):
-        return torch.zeros(1, batch_size, self.hidden_size, device=device)
+    def initHidden(self):
+        return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
 
@@ -119,26 +119,36 @@ class AttnDecoderRNN(nn.Module):
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, input, hidden, encoder_outputs):
-        embedded = self.embedding(input)
-        # input = [1, 1]
-        # embedded = [src sent len, batch size, hid_size]
-        # hidden = [1, batch size, hid_size]
+        embedded = self.embedding(input).view(BATCH_SIZE, 1, -1)
+        # input = [B, 1, 1]
+        # embedded = [batch size, 1, hid_size]
+        # hidden = [batch size, 1, hid_size]
         embedded = self.dropout(embedded)
 
         # TODO Not sure how this concat works
         # TODO: Fix this exception: Sizes of tensors must match except in dimension 1. Got 128 and 1 in dimension 0
-        # hidden = [1, batch, hid_size]
-        # embedded = [1, 1, hid_size]
+        # hidden = [B, 1, hid_size]
+        # embedded = [B, 1, hid_size] TODO: squeeze embed and hidden
+        hidden = hidden.squeeze()
+        embedded = embedded.squeeze()
         attn_weights = F.softmax(
-            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
-                                 encoder_outputs.unsqueeze(0))
+            self.attn(torch.cat((embedded, hidden), 1)), dim=1) #attn_weights = [B, Max_len]
 
-        output = torch.cat((embedded[0], attn_applied[0]), 1)
-        output = self.attn_combine(output).unsqueeze(0)
+        # encoder_outputs = torch.Size([B, Max_len, 320])
+
+
+        attn_applied = torch.bmm(attn_weights.unsqueeze(1), #attn_weights = [B, 1, Max_len]
+                                 encoder_outputs) # encoder_outputs = torch.Size([B, Max_len, 320])
+        # attn_applied = [B, 1, 320]
+        attn_applied = attn_applied.squeeze()
+        output = torch.cat((embedded, attn_applied), 1)
+        output = self.attn_combine(output)
 
         output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
+
+        # TODO: TA inja dorost kardam. edame bede!!!!!!!
+        # Expected hidden size (1, 1, 320), got (128, 1, 320)
+        output, hidden = self.gru(output.unsqueeze(1), hidden.unsqueeze(1))
 
         output = F.log_softmax(self.out(output[0]), dim=1)
         return output, hidden, attn_weights
@@ -178,29 +188,28 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
     decoder.train()
     epoch_loss = 0
 
-    encoder_hidden = encoder.initHidden(BATCH_SIZE)
+    encoder_hidden = encoder.initHidden()
     for i, batch in enumerate(iterator):
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
-        src = batch.raw_caption[0]
-        trg = batch.raw_label[0]
+        src = batch.raw_caption[0] #[B, src_len]
+        trg = batch.raw_label[0] #[B, trg_len]
 
-        input_length = src.size(0)
-        target_length = trg.size(0)
+        input_length = src.size(1)
+        target_length = trg.size(1)
 
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
-
+        encoder_outputs = torch.zeros(BATCH_SIZE, max_length, encoder.hidden_size, device=device) #[B, 60, hid]
+        encoder_output = torch.zeros(BATCH_SIZE, 1, encoder.hidden_size, device=device)
         loss = 0
 
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(
-                src[ei], encoder_hidden)
-            encoder_outputs[ei] = encoder_output[0, 0]
+                src[:, ei], encoder_hidden)
+            encoder_outputs[:, ei] = encoder_output[:, 0]
 
-        decoder_input = torch.tensor([[SOS_token]], device=device)
-        # encoder_hidden = [1, B, hid_size]
-        decoder_hidden = encoder_hidden
-        # encoder_hidden = [1, B, hid_size]
+        decoder_input = torch.tensor([[SOS_token]], device=device).repeat(128, 1, 1)
+        # encoder_hidden = [B, 1, hid_size]
+        decoder_hidden = encoder_output #[B, 1, hid_size]
 
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -210,7 +219,7 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
                 decoder_output, decoder_hidden, decoder_attention = decoder(
                     decoder_input, decoder_hidden, encoder_outputs)
                 loss += criterion(decoder_output, trg[di])
-                decoder_input = trg[di]  # Teacher forcing
+                decoder_input = trg[:, di]  # Teacher forcing
 
         else:
         # Without teacher forcing: use its own predictions as the next input

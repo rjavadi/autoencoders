@@ -113,7 +113,7 @@ class Decoder(nn.Module):
         # All the "seq_len" encoder outputs
         # Outputs a vector summing to 1 of length seq_len for each observation
 
-        a = self.attention(decoder_hidden, encoder_outputs)
+        a = self.attention(decoder_hidden, encoder_outputs) #dec_hid = [128, hid_dim]
         # a = [batch size, src len]
         a = a.unsqueeze(1)
         # a = [batch size, 1, src len]
