@@ -200,7 +200,7 @@ class AttnDecoderRNN(nn.Module):
         #hidden = [1, 1, 320]
         output, dec_hid = self.gru(output, hidden)
 
-        output = F.log_softmax(self.out(output[0]), dim=1)
+        output = F.log_softmax(self.out(output[0]), dim=1) #self.out(output[0]) = [1, Vocab]
         return output, dec_hid, attn_weights
 
     def initHidden(self):
@@ -272,7 +272,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
-            loss += criterion(decoder_output, target_tensor[di])
+            loss += criterion(decoder_output, target_tensor[di]) #output = [1, vocab]
             if decoder_input.item() == EOS_token:
                 break
 

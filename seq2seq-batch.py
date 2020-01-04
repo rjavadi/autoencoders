@@ -85,7 +85,7 @@ class EncoderRNN(nn.Module):
         self.hidden_size = hidden_size
         # embedding_size = hidden_size
         self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
 
     def forward(self, input, hidden):
         # input = [batch size]
@@ -98,8 +98,8 @@ class EncoderRNN(nn.Module):
         # hidden = [1, batch size, hid dim]
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+    def initHidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
 
 
@@ -115,7 +115,7 @@ class AttnDecoderRNN(nn.Module):
         self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
-        self.gru = nn.GRU(self.hidden_size, self.hidden_size)
+        self.gru = nn.GRU(self.hidden_size, self.hidden_size, batch_first=True)
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, input, hidden, encoder_outputs):
@@ -143,15 +143,16 @@ class AttnDecoderRNN(nn.Module):
         attn_applied = attn_applied.squeeze()
         output = torch.cat((embedded, attn_applied), 1)
         output = self.attn_combine(output)
-
-        output = F.relu(output)
+        #output[0] = [-3.3558e-01, -3.9008e-01, -3.4977e-01, -1.7140e-03,  2.9517e-01,
+        output = F.relu(output) # inaja matrix output kheili sparse mishe :(
 
         # TODO: TA inja dorost kardam. edame bede!!!!!!!
         # Expected hidden size (1, 1, 320), got (128, 1, 320)
-        output, hidden = self.gru(output.unsqueeze(1), hidden.unsqueeze(1))
-
-        output = F.log_softmax(self.out(output[0]), dim=1)
-        return output, hidden, attn_weights
+        output, hidden = self.gru(output.unsqueeze(1), hidden.unsqueeze(0))
+        # output[0] = [-4.0288e-02, -1.5680e-01, -5.6202e-02,  ..., -1.4169e-01,
+        #            1.9721e-02, -2.9662e-01]
+        output = F.log_softmax(self.out(output), dim=2) #output=[B, 1, hid] - #self.out(output[0]) = [B, 1, Vocab]
+        return output.squeeze(), hidden, attn_weights
 
     def initHidden(self, batch_size):
         return torch.zeros(1, batch_size, self.hidden_size, device=device)
@@ -187,8 +188,8 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
     encoder.train()
     decoder.train()
     epoch_loss = 0
-
-    encoder_hidden = encoder.initHidden()
+    count = 0
+    encoder_hidden = encoder.initHidden(BATCH_SIZE)
     for i, batch in enumerate(iterator):
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
@@ -201,39 +202,40 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
         encoder_outputs = torch.zeros(BATCH_SIZE, max_length, encoder.hidden_size, device=device) #[B, 60, hid]
         encoder_output = torch.zeros(BATCH_SIZE, 1, encoder.hidden_size, device=device)
         loss = 0
-
+        # TODO: moshkel ine ke input_len 70 hast, vali ma goftim max_length=60. bayad voroud ha ro cut va filter konim.
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(
                 src[:, ei], encoder_hidden)
-            encoder_outputs[:, ei] = encoder_output[:, 0]
+            encoder_outputs[:, ei] = encoder_output[:, 0] #[128, 60, 320]
 
         decoder_input = torch.tensor([[SOS_token]], device=device).repeat(128, 1, 1)
         # encoder_hidden = [B, 1, hid_size]
         decoder_hidden = encoder_output #[B, 1, hid_size]
 
-        use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-        if use_teacher_forcing:
-           # Teacher forcing: Feed the target as the next input
-            for di in range(target_length):
+        for di in range(target_length):
+            use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+            if use_teacher_forcing:
                 decoder_output, decoder_hidden, decoder_attention = decoder(
                     decoder_input, decoder_hidden, encoder_outputs)
-                loss += criterion(decoder_output, trg[di])
+                loss += criterion(decoder_output, trg[:, di]) #trg=[B, len] , decoder_output = [B, 1, vocab]
                 decoder_input = trg[:, di]  # Teacher forcing
-
-        else:
-        # Without teacher forcing: use its own predictions as the next input
-            for di in range(target_length):
+            else:
                 decoder_output, decoder_hidden, decoder_attention = decoder(
                     decoder_input, decoder_hidden, encoder_outputs)
-                topv, topi = decoder_output.topk(1)
+                # topv = [[-9.0280],[-9.0581],[-9.0583],[-9.0091],[-9.0417],[-9.0071],....]
+                #         [-9.0256],....] [128, 1]
+                topv, topi = decoder_output.topk(1) #topi = [1306, 8360, 2019, 2019, 2019, 2019, 5037, 5037,...]
                 decoder_input = topi.squeeze().detach()  # detach from history as input
 
-                loss += criterion(decoder_output, trg[di])
-                if decoder_input.item() == EOS_token:
-                    break
+                loss += criterion(decoder_output, trg[:, di])
+                # if decoder_input.item() == EOS_token:
+                #     break
+                print('******', count)
 
-        loss.backward()
+        count += 1
+
+        loss.backward(retain_graph=True)
         encoder_optimizer.step()
         decoder_optimizer.step()
         epoch_loss += loss.item()
@@ -249,28 +251,30 @@ def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_
             src = batch.raw_caption[0]
             trg = batch.raw_label[0]
 
-            input_length = src.size(0)
-            target_length = trg.size(0)
+            input_length = src.size(1)
+            target_length = trg.size(1)
 
-            encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+            encoder_outputs = torch.zeros(BATCH_SIZE, max_length, encoder.hidden_size, device=device)
+            encoder_output = torch.zeros(BATCH_SIZE, 1, encoder.hidden_size, device=device)
+
             loss = 0
             for ei in range(input_length):
                 encoder_output, encoder_hidden = encoder(
-                    src[ei], encoder_hidden)
-                encoder_outputs[ei] = encoder_output[0, 0]
+                    src[:, ei], encoder_hidden)
+                encoder_outputs[:, ei] = encoder_output[:, 0]
 
-            decoder_input = torch.tensor([[SOS_token]], device=device)
+            decoder_input = torch.tensor([[SOS_token]], device=device).repeat(128, 1, 1)
 
-            decoder_hidden = encoder_hidden
+            decoder_hidden = encoder_output
             for di in range(target_length):
                 decoder_output, decoder_hidden, decoder_attention = decoder(
                     decoder_input, decoder_hidden, encoder_outputs)
                 topv, topi = decoder_output.topk(1)
                 decoder_input = topi.squeeze().detach()  # detach from history as input
 
-                loss += criterion(decoder_output, trg[di])
-                if decoder_input.item() == EOS_token:
-                    break
+                loss += criterion(decoder_output, trg[:, di])
+                # if decoder_input.item() == EOS_token:
+                #     break
 
             epoch_loss += loss.item()
     return epoch_loss / len(iterator)

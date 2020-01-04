@@ -73,5 +73,6 @@ if __name__ == "__main__":
     print(remove_punc_str("2 apples, 3 bananas, 4 birds...!"))
     cap_csv = pd.read_csv(os.path.join('../data', 'captions_processed.csv'))
     # cap_csv['raw_caption'] = cap_csv['raw_caption'].apply(remove_punc_str)
-    cap_csv['raw_label'] = cap_csv['raw_caption']
+    # cap_csv['raw_label'] = cap_csv['raw_caption']
+
     cap_csv.to_csv('../data/captions_processed.csv')
