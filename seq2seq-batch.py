@@ -87,13 +87,13 @@ class EncoderRNN(nn.Module):
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
 
-    def forward(self, input, hidden):
+    def forward(self, input):
         # input = [batch size]
-        embedded = self.embedding(input).view(BATCH_SIZE, -1, hidden_size)
+        batch_size = input.size(0)
+        embedded = self.embedding(input).view(batch_size, 1, hidden_size)
         # embedded = [batch size, 1,emb dim]
 
-        output = embedded
-        output, hidden = self.gru(output, hidden)
+        output, hidden = self.gru(embedded)
         # outputs = [src sent len, batch size, hid dim]
         # hidden = [1, batch size, hid dim]
         return output, hidden
@@ -119,16 +119,16 @@ class AttnDecoderRNN(nn.Module):
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, input, hidden, encoder_outputs):
-        embedded = self.embedding(input).view(BATCH_SIZE, 1, -1)
+
+        batch_size = input.shape[0]
+        embedded = self.embedding(input).view(batch_size, 1, self.hidden_size)
         # input = [B, 1, 1]
         # embedded = [batch size, 1, hid_size]
         # hidden = [batch size, 1, hid_size]
         embedded = self.dropout(embedded)
 
-        # TODO Not sure how this concat works
-        # TODO: Fix this exception: Sizes of tensors must match except in dimension 1. Got 128 and 1 in dimension 0
         # hidden = [B, 1, hid_size]
-        # embedded = [B, 1, hid_size] TODO: squeeze embed and hidden
+        # embedded = [B, 1, hid_size]
         hidden = hidden.squeeze()
         embedded = embedded.squeeze()
         attn_weights = F.softmax(
@@ -146,7 +146,6 @@ class AttnDecoderRNN(nn.Module):
         #output[0] = [-3.3558e-01, -3.9008e-01, -3.4977e-01, -1.7140e-03,  2.9517e-01,
         output = F.relu(output) # inaja matrix output kheili sparse mishe :(
 
-        # TODO: TA inja dorost kardam. edame bede!!!!!!!
         # Expected hidden size (1, 1, 320), got (128, 1, 320)
         output, hidden = self.gru(output.unsqueeze(1), hidden.unsqueeze(0))
         # output[0] = [-4.0288e-02, -1.5680e-01, -5.6202e-02,  ..., -1.4169e-01,
@@ -198,17 +197,16 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
 
         input_length = src.size(1)
         target_length = trg.size(1)
-
-        encoder_outputs = torch.zeros(BATCH_SIZE, max_length, encoder.hidden_size, device=device) #[B, 60, hid]
+        B = src.size(0)
+        encoder_outputs = torch.zeros(B, max_length, encoder.hidden_size, device=device) #[B, 60, hid]
         encoder_output = torch.zeros(BATCH_SIZE, 1, encoder.hidden_size, device=device)
         loss = 0
-        # TODO: moshkel ine ke input_len 70 hast, vali ma goftim max_length=60. bayad voroud ha ro cut va filter konim.
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(
-                src[:, ei], encoder_hidden)
+                src[:, ei])
             encoder_outputs[:, ei] = encoder_output[:, 0] #[128, 60, 320]
 
-        decoder_input = torch.tensor([[SOS_token]], device=device).repeat(128, 1, 1)
+        decoder_input = torch.tensor([[SOS_token]], device=device).repeat(B, 1, 1)
         # encoder_hidden = [B, 1, hid_size]
         decoder_hidden = encoder_output #[B, 1, hid_size]
 
@@ -253,17 +251,17 @@ def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_
 
             input_length = src.size(1)
             target_length = trg.size(1)
-
-            encoder_outputs = torch.zeros(BATCH_SIZE, max_length, encoder.hidden_size, device=device)
-            encoder_output = torch.zeros(BATCH_SIZE, 1, encoder.hidden_size, device=device)
+            B = src.size(0) # current batch size. It might be less than real Batch_size in the last batch
+            encoder_outputs = torch.zeros(B, max_length, encoder.hidden_size, device=device)
+            encoder_output = torch.zeros(B, 1, encoder.hidden_size, device=device)
 
             loss = 0
             for ei in range(input_length):
                 encoder_output, encoder_hidden = encoder(
-                    src[:, ei], encoder_hidden)
+                    src[:, ei])
                 encoder_outputs[:, ei] = encoder_output[:, 0]
 
-            decoder_input = torch.tensor([[SOS_token]], device=device).repeat(128, 1, 1)
+            decoder_input = torch.tensor([[SOS_token]], device=device).repeat(B, 1, 1)
 
             decoder_hidden = encoder_output
             for di in range(target_length):
@@ -318,7 +316,7 @@ def epoch_time(start_time: int, end_time: int):
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 
-N_EPOCHS = 8
+N_EPOCHS = 1
 
 def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_every=100, learning_rate=0.01):
 
@@ -427,7 +425,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 # We can evaluate random sentences from the training set and print out the
 # input, target, and output to make some subjective quality judgements:
 #
-
+#TODO: Look how it works.
 def evaluateRandomly(encoder, decoder, n=10):
     pairs = test_iterator.data
     for i in range(n):

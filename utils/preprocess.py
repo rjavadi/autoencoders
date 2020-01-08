@@ -47,6 +47,12 @@ def remove_punc_str(cap: str):
     cap = re.sub(' +', ' ', cap)
     return cap
 
+def remove_long_desc(dfObj: pd.DataFrame, max_len):
+    long_desc = dfObj[dfObj['raw_caption'].map(sent_len) >= max_len]
+    return dfObj.drop(long_desc.index)
+
+def sent_len(sent):
+    return len(sent.split(' '))
 
 def clean_text():
     config = ConfigParser()
@@ -74,5 +80,5 @@ if __name__ == "__main__":
     cap_csv = pd.read_csv(os.path.join('../data', 'captions_processed.csv'))
     # cap_csv['raw_caption'] = cap_csv['raw_caption'].apply(remove_punc_str)
     # cap_csv['raw_label'] = cap_csv['raw_caption']
-
+    cap_csv = remove_long_desc(cap_csv, 60)
     cap_csv.to_csv('../data/captions_processed.csv')
