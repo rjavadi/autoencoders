@@ -66,7 +66,7 @@ LABEL.build_vocab(caption_data,
 
 # with open('vocab.json', 'w') as fp:
 #     json.dump(TEXT.vocab.stoi, fp)
-train_data, test_data = caption_data.split(split_ratio=0.75)
+train_data, test_data = caption_data.split(split_ratio=0.99)
 train_data, val_data = train_data.split()
 
 # Create a set of iterators for each split
@@ -131,6 +131,7 @@ class AttnDecoderRNN(nn.Module):
         # embedded = [B, 1, hid_size]
         hidden = hidden.squeeze()
         embedded = embedded.squeeze()
+        #TODO: add an IF here for testing a single sentence.
         attn_weights = F.softmax(
             self.attn(torch.cat((embedded, hidden), 1)), dim=1) #attn_weights = [B, Max_len]
 
@@ -159,14 +160,19 @@ class AttnDecoderRNN(nn.Module):
 
 
 
-def indexesFromSentence(field, sentence):
-    return [field.stoi[word] for word in sentence.split(' ')]
+def indexesFromSentence(field, sentences):
+    output = []
+    eos_tensor = torch.tensor([EOS_token])
+    for i in range(len(sentences)):
+        output.append(torch.cat((torch.tensor([field.vocab.stoi[word] for word in sentences[i]]), eos_tensor)))
+    return output
 
 
 def tensorFromSentence(field, sentence):
     indexes = indexesFromSentence(field, sentence)
-    indexes.append(EOS_token)
-    return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
+    for item in indexes:
+        item.append(EOS_token)
+    return torch.tensor(indexes, dtype=torch.long, device=device)
 
 
 def tensorsFromPair(pair):
@@ -225,7 +231,8 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
                 #         [-9.0256],....] [128, 1]
                 topv, topi = decoder_output.topk(1) #topi = [1306, 8360, 2019, 2019, 2019, 2019, 5037, 5037,...]
                 decoder_input = topi.squeeze().detach()  # detach from history as input
-
+                if count == 440:
+                    print('ME!')
                 loss += criterion(decoder_output, trg[:, di])
                 # if decoder_input.item() == EOS_token:
                 #     break
@@ -240,7 +247,7 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
 
     return epoch_loss / len(iterator)
 
-def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH, is_test=False):
+def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder.eval()
     decoder.eval()
     epoch_loss = 0
@@ -327,12 +334,16 @@ def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_eve
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
+    epoch_train_loss = []
+    epoch_valid_loss = []
     for epoch in range(n_epochs):
         start_time = time.time()
 
         criterion = nn.NLLLoss()
         train_loss = train(train_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
         valid_loss = eval(val_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
+        epoch_train_loss.append(train_loss)
+        epoch_valid_loss.append(valid_loss)
         summary_writer.add_scalar('train-loss', train_loss, epoch)
         summary_writer.add_scalar('val-loss', valid_loss, epoch)
 
@@ -385,38 +396,38 @@ def showPlot(points):
 
 
 
-def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
+def evaluate(iterator: BucketIterator, encoder, decoder, sentence, max_length=MAX_LENGTH):
     with torch.no_grad():
-        input_tensor = tensorFromSentence(TEXT, sentence)
-        input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden(BATCH_SIZE)
+        for i, batch in enumerate(iterator):
+            input_tensor = indexesFromSentence(TEXT, sentence)
+            input_length = input_tensor.size()[0]
+            # encoder_hidden = encoder.initHidden(1)
 
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+            encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
-        for ei in range(input_length):
-            encoder_output, encoder_hidden = encoder(input_tensor[ei],
-                                                     encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
+            for ei in range(input_length):
+                encoder_output, encoder_hidden = encoder(input_tensor[ei])
+                encoder_outputs[ei] += encoder_output[0, 0]
 
-        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
+            decoder_input = torch.tensor([[[SOS_token]]], device=device)  # SOS
 
-        decoder_hidden = encoder_hidden
+            decoder_hidden = encoder_hidden
 
-        decoded_words = []
-        decoder_attentions = torch.zeros(max_length, max_length)
+            decoded_words = []
+            decoder_attentions = torch.zeros(max_length, max_length)
 
-        for di in range(max_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            decoder_attentions[di] = decoder_attention.data
-            topv, topi = decoder_output.data.topk(1)
-            if topi.item() == EOS_token:
-                decoded_words.append('<EOS>')
-                break
-            else:
-                decoded_words.append(LABEL.vocab.itos[topi.item()])
+            for di in range(max_length):
+                decoder_output, decoder_hidden, decoder_attention = decoder(
+                    decoder_input, decoder_hidden, encoder_outputs)
+                decoder_attentions[di] = decoder_attention.data
+                topv, topi = decoder_output.data.topk(1)
+                if topi.item() == EOS_token:
+                    decoded_words.append('<EOS>')
+                    break
+                else:
+                    decoded_words.append(LABEL.vocab.itos[topi.item()])
 
-            decoder_input = topi.squeeze().detach()
+                decoder_input = topi.squeeze().detach()
 
         return decoded_words, decoder_attentions[:di + 1]
 
@@ -427,15 +438,25 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 #
 #TODO: Look how it works.
 def evaluateRandomly(encoder, decoder, n=10):
-    pairs = test_iterator.data
-    for i in range(n):
-        pair = random.choice(pairs)
-        print('>', pair[0])
-        print('=', pair[1])
-        output_words, attentions = evaluate(encoder, decoder, pair[0])
-        output_sentence = ' '.join(output_words)
-        print('<', output_sentence)
-        print('')
+    test_data = test_iterator.dataset.examples
+    pairs = random.choice(test_data)
+    random.sample(test_data, n)
+    pairs_raw_captions = []
+    count = 0
+    for ex in test_data:
+        print('>', ex.raw_caption)
+        print('=', ex.raw_label)
+        pairs_raw_captions.append(ex.raw_caption)
+        count+=1
+        if count == n:
+            break
+    # for i in range(n):
+    #
+    #     pairs_raw_captions.append(pairs[i].raw_caption)
+    output_words, attentions = evaluate(encoder, decoder, pairs_raw_captions)
+    output_sentence = ' '.join(output_words)
+    print('<', output_sentence)
+    print('')
 
 
 ######################################################################

@@ -229,8 +229,8 @@ def tensorsFromPair(pair):
 teacher_forcing_ratio = 0.5
 
 import datetime
-current_time = str(datetime.datetime.now())
-summary_writer = SummaryWriter(log_dir='logs/' + current_time)
+current_time = datetime.datetime.now().strftime("%m/%d/%Y-%H:%M:%S")
+summary_writer = SummaryWriter(log_dir='logs/text-ae' + current_time)
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()

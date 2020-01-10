@@ -11,8 +11,15 @@ from model.pointnet_encoder import PCAE
 from dataset import ShapeNetDataSet
 from fastprogress import master_bar, progress_bar
 from chamfer_distance import ChamferDistance
+from torch.utils.tensorboard import SummaryWriter
+import datetime
+
 
 config_file_name = "config.ini"
+
+current_time = datetime.datetime.now().strftime("%m/%d/%Y-%H:%M:%S")
+
+summary_writer = SummaryWriter(log_dir='logs/shape-ae' + current_time)
 
 
 def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_dir):
