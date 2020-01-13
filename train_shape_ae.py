@@ -19,7 +19,7 @@ config_file_name = "config.ini"
 
 current_time = datetime.datetime.now().strftime("%m/%d/%Y-%H:%M:%S")
 
-summary_writer = SummaryWriter(log_dir='logs/shape-ae' + current_time)
+summary_writer = SummaryWriter(log_dir='logs/shape-ae/' + current_time)
 
 
 def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_dir):
@@ -77,6 +77,9 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             loss = (torch.mean(dist1)) + (torch.mean(dist2))
             epoch_train_loss.append(loss.cpu().item())
             epoch_train_loss.append(loss.item())
+            summary_writer.add_scalar('training loss',
+                              loss.item(),
+                              epoch * len(train_dataloader) + batch_number)
 
             loss.backward()
             optimizer.step()
@@ -107,6 +110,9 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
                      % (epoch,
                         np.mean(epoch_train_loss),
                         np.mean(epoch_test_loss)))
+            summary_writer.add_scalar('validation loss',
+                                      loss.item(),
+                                      epoch * len(test_dataloader) + batch_number)
             if test_loss and np.mean(epoch_test_loss) < np.min(test_loss):
                 torch.save(model.state_dict(), os.path.join(output_dir, 'shapenet_classification_model.pth'))
 
