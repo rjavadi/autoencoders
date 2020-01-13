@@ -329,15 +329,18 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
+    # be tedad n_iter ha pair entekhab mikone.
     training_pairs = [tensorsFromPair(sys_random.choice(pairs))
                       for i in range(n_iters)]
+    #TODO: changing loss.
     criterion = nn.NLLLoss()
 
+    # hala az rooye oun pair haee ke entekhab karde mikhoone
     for iter in range(1, n_iters + 1):
         training_pair = training_pairs[iter - 1]
         input_tensor = training_pair[0]
         target_tensor = training_pair[1]
-
+        # rooye ye voroudi train mikone loss ro mide.
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         summary_writer.add_scalar('train-loss', loss, iter)

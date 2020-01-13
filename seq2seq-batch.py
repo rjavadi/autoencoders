@@ -360,7 +360,7 @@ def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_eve
         print(f'\t Val. Loss: {valid_loss:.3f} |  Val. PPL: {math.exp(valid_loss):7.3f}')
 
 
-
+        # TODO: after iterating an epoch, we should calculate validation loss.
 
 ######################################################################
 # Plotting results
