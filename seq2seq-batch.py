@@ -185,11 +185,11 @@ def tensorsFromPair(pair):
 teacher_forcing_ratio = 0.5
 
 import datetime
-current_time = datetime.datetime.now().strftime("%m/%d/%Y-%H:%M:%S")
+current_time = datetime.datetime.now().strftime("%m-%d-%Y-%H:%M:%S")
 
-summary_writer = SummaryWriter(log_dir='logs/text-ae/' + current_time)
+summary_writer = SummaryWriter(log_dir='logs/text-ae/batch/' + current_time)
 
-def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
+def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, current_epoch, max_length=MAX_LENGTH):
 
     encoder.train()
     decoder.train()
@@ -228,18 +228,17 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
             else:
                 decoder_output, decoder_hidden, decoder_attention = decoder(
                     decoder_input, decoder_hidden, encoder_outputs)
-                # topv = [[-9.0280],[-9.0581],[-9.0583],[-9.0091],[-9.0417],[-9.0071],....]
-                #         [-9.0256],....] [128, 1]
-                topv, topi = decoder_output.topk(1) #topi = [1306, 8360, 2019, 2019, 2019, 2019, 5037, 5037,...]
+                # topv =
+                topv, topi = decoder_output.topk(1) #topi =
                 decoder_input = topi.squeeze().detach()  # detach from history as input
                 if count == 440:
                     print('ME!')
                 loss += criterion(decoder_output, trg[:, di])
                 # if decoder_input.item() == EOS_token:
                 #     break
-                print('******', count)
-
-        count += 1
+                print('mini-batch: ', i, ', epoch: ', current_epoch + 1)
+            loss /= target_length
+        summary_writer.add_scalar('training_loss_batch', loss )
 
         loss.backward(retain_graph=True)
         encoder_optimizer.step()
@@ -248,7 +247,7 @@ def train(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder
 
     return epoch_loss / len(iterator)
 
-def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
+def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, current_epoch, max_length=MAX_LENGTH):
     encoder.eval()
     decoder.eval()
     epoch_loss = 0
@@ -281,8 +280,10 @@ def eval(iterator: BucketIterator, encoder, decoder, encoder_optimizer, decoder_
                 loss += criterion(decoder_output, trg[:, di])
                 # if decoder_input.item() == EOS_token:
                 #     break
-
+            loss /= target_length
+            summary_writer.add_scalar('validation_loss_batch', loss)
             epoch_loss += loss.item()
+
     return epoch_loss / len(iterator)
 
 ######################################################################
@@ -324,7 +325,7 @@ def epoch_time(start_time: int, end_time: int):
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 
-N_EPOCHS = 1
+N_EPOCHS = 3
 
 def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_every=100, learning_rate=0.01):
 
@@ -341,13 +342,10 @@ def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_eve
         start_time = time.time()
 
         criterion = nn.NLLLoss()
-        train_loss = train(train_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
-        valid_loss = eval(val_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
+        train_loss = train(train_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, epoch)
+        valid_loss = eval(val_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, epoch)
         epoch_train_loss.append(train_loss)
         epoch_valid_loss.append(valid_loss)
-        summary_writer.add_scalar('train-loss', train_loss, epoch)
-        summary_writer.add_scalar('val-loss', valid_loss, epoch)
-
         end_time = time.time()
         epoch_mins, epoch_secs = epoch_time(start_time, end_time)
 
@@ -356,8 +354,8 @@ def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_eve
             torch.save(encoder.state_dict(), ENCODER_MODEL)
             torch.save(encoder.state_dict(), DECODER_MODEL)
         print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
-        print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):7.3f}')
-        print(f'\t Val. Loss: {valid_loss:.3f} |  Val. PPL: {math.exp(valid_loss):7.3f}')
+        print(f'\tTrain Loss: {train_loss:.3f}')
+        print(f'\t Val. Loss: {valid_loss:.3f}')
 
 
         # TODO: after iterating an epoch, we should calculate validation loss.
@@ -454,6 +452,7 @@ def evaluateRandomly(encoder, decoder, n=10):
     # for i in range(n):
     #
     #     pairs_raw_captions.append(pairs[i].raw_caption)
+    # TODO: ERROR here: evaluate() missing 1 required positional argument: 'sentence'
     output_words, attentions = evaluate(encoder, decoder, pairs_raw_captions)
     output_sentence = ' '.join(output_words)
     print('<', output_sentence)
@@ -488,7 +487,7 @@ trainIters(encoder1, attn_decoder1)
 ######################################################################
 #
 
-evaluateRandomly(encoder1, attn_decoder1)
+# evaluateRandomly(encoder1, attn_decoder1)
 
 
 ######################################################################

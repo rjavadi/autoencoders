@@ -105,10 +105,10 @@ def readLangs():
 
     # Reverse pairs, make Lang instances
 
-    input_lang = Lang('caps')
-    output_lang = Lang('labs')
-
-    return input_lang, output_lang, pairs
+    captions = Lang('caps')
+    labels = Lang('labs')
+    # captions and labels are empty now.
+    return captions, labels, pairs
 
 
 
@@ -124,18 +124,20 @@ def filterPairs(pairs):
 
 
 def prepareData():
-    input_lang, output_lang, pairs = readLangs()
+    # pairs is a list of (cap labels)
+    captions, labels, pairs = readLangs()
     print("Read %s sentence pairs" % len(pairs))
     pairs = filterPairs(pairs)
     print("Trimmed to %s sentence pairs" % len(pairs))
     print("Counting words...")
     for pair in pairs:
-        input_lang.addSentence(pair[0])
-        output_lang.addSentence(pair[1])
+        # add words to both dictionaries (captions and labels)
+        captions.addSentence(pair[0])
+        labels.addSentence(pair[1])
     print("Counted words:")
-    print(input_lang.name, input_lang.n_words)
-    print(output_lang.name, output_lang.n_words)
-    return input_lang, output_lang, pairs
+    print(captions.name, captions.n_words)
+    print(labels.name, labels.n_words)
+    return captions, labels, pairs
 
 
 input_lang, output_lang, pairs = prepareData()
@@ -228,8 +230,8 @@ def tensorsFromPair(pair):
 teacher_forcing_ratio = 0.5
 
 import datetime
-current_time = datetime.datetime.now().strftime("%m/%d/%Y-%H:%M:%S")
-summary_writer = SummaryWriter(log_dir='logs/text-ae' + current_time)
+current_time = datetime.datetime.now().strftime("%m-%d-%Y-%H:%M:%S")
+summary_writer = SummaryWriter(log_dir='logs/text-ae/' + current_time)
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
@@ -318,6 +320,38 @@ def timeSince(since, percent):
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 
+EPOCHS = 5
+
+def train_epochs(encoder, decoder, n_epochs=EPOCHS, learning_rate=0.01):
+    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate, momentum=0.5)
+    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate, momentum=0.5)
+    train_set, val_set = train_test_split(pairs, train_size=0.8)
+    train_set, test_set = train_test_split(train_set, test_size=0.05)
+    criterion = nn.NLLLoss()
+
+    for epoch in range(0, n_epochs):
+        total_epoch_loss = 0
+        for i, pair in enumerate(train_set):
+            training_pair = tensorsFromPair(pair)
+            input_tensor = training_pair[0]
+            target_tensor = training_pair[1]
+            loss = train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion)
+            total_epoch_loss += loss
+            counter = epoch * len(train_set) + i
+            summary_writer.add_scalar('train-loss', loss, counter)
+        summary_writer.add_scalar('total train epoch loss', total_epoch_loss, epoch + 1)
+
+        for i, pair in enumerate(val_set):
+            valid_pair = tensorsFromPair(pair)
+            input_tensor = valid_pair[0]
+            target_tensor = valid_pair[1]
+            loss = valid(input_tensor, target_tensor, encoder,
+                         decoder, criterion)
+            total_epoch_loss += loss
+            counter = epoch * len(val_set) + i
+            summary_writer.add_scalar('val-loss', loss, counter)
+        # summary_writer.add_scalar('total epoch loss', total_epoch_loss, epoch + 1)
+
 
 def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, learning_rate=0.01):
     start = time.time()
@@ -325,14 +359,14 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
     print_loss_total = 0  # Reset every print_every
     plot_loss_total = 0  # Reset every plot_every
 
-    #TODO: what happens if I change SGD to Adam or other optimizers?
+    #TODO: what happens if I change SGD to SGD or other optimizers?
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
     # be tedad n_iter ha pair entekhab mikone.
     training_pairs = [tensorsFromPair(sys_random.choice(pairs))
                       for i in range(n_iters)]
-    #TODO: changing loss.
+    #TODO: changing loss. ---> DONE
     criterion = nn.NLLLoss()
 
     # hala az rooye oun pair haee ke entekhab karde mikhoone
@@ -382,6 +416,37 @@ def showPlot(points):
     loc = ticker.MultipleLocator(base=0.2)
     ax.yaxis.set_major_locator(loc)
     plt.plot(points)
+
+def valid(input_tensor, target_tensor, encoder,
+                         decoder, criterion, max_length=MAX_LENGTH):
+    input_length = input_tensor.size(0)
+    target_length = target_tensor.size(0)
+    with torch.no_grad():
+        encoder_hidden = encoder.initHidden()
+        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+        loss = 0
+        for ei in range(input_length):
+            encoder_output, encoder_hidden = encoder(
+                input_tensor[ei], encoder_hidden)
+            encoder_outputs[ei] = encoder_output[0, 0]
+
+        decoder_input = torch.tensor([[SOS_token]], device=device)
+
+        decoder_hidden = encoder_hidden
+        for di in range(target_length):
+            decoder_output, decoder_hidden, decoder_attention = decoder(
+                decoder_input, decoder_hidden, encoder_outputs)
+            topv, topi = decoder_output.topk(1)
+            decoder_input = topi.squeeze().detach()  # detach from history as input
+
+            loss += criterion(decoder_output, target_tensor[di]) #output = [1, vocab]
+            if decoder_input.item() == EOS_token:
+                break
+    return loss.item() / target_length
+
+
+
+
 
 
 ######################################################################
@@ -470,8 +535,8 @@ hidden_size = 320
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
 
-trainIters(encoder1, attn_decoder1, 8000, print_every=800)
-
+# trainIters(encoder1, attn_decoder1, 8000, print_every=800)
+train_epochs(encoder1, attn_decoder1)
 ######################################################################
 #
 
