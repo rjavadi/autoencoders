@@ -29,7 +29,7 @@ def caption_file():
 
 
 MAX_LENGTH = 60
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 def filterPair(p):
     return len(p[0].split(' ')) < MAX_LENGTH and \
         len(p[1].split(' ')) < MAX_LENGTH
@@ -151,7 +151,8 @@ class AttnDecoderRNN(nn.Module):
         output, hidden = self.gru(output.unsqueeze(1), hidden.unsqueeze(0))
         # output[0] = [-4.0288e-02, -1.5680e-01, -5.6202e-02,  ..., -1.4169e-01,
         #            1.9721e-02, -2.9662e-01]
-        output = F.log_softmax(self.out(output), dim=2) #output=[B, 1, hid] - #self.out(output[0]) = [B, 1, Vocab]
+        # output = F.log_softmax(self.out(output), dim=2) #output=[B, 1, hid] - #self.out(output[0]) = [B, 1, Vocab]
+        output = self.out(output)
         return output.squeeze(), hidden, attn_weights
 
     def initHidden(self, batch_size):
@@ -341,7 +342,7 @@ def trainIters(encoder, decoder, n_epochs = N_EPOCHS, print_every=1000, plot_eve
     for epoch in range(n_epochs):
         start_time = time.time()
 
-        criterion = nn.NLLLoss()
+        criterion = nn.CrossEntropyLoss()
         train_loss = train(train_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, epoch)
         valid_loss = eval(val_iterator, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, epoch)
         epoch_train_loss.append(train_loss)
@@ -435,7 +436,7 @@ def evaluate(iterator: BucketIterator, encoder, decoder, sentence, max_length=MA
 # We can evaluate random sentences from the training set and print out the
 # input, target, and output to make some subjective quality judgements:
 #
-#TODO: Look how it works.
+#TODO: refactor and fix.
 def evaluateRandomly(encoder, decoder, n=10):
     test_data = test_iterator.dataset.examples
     pairs = random.choice(test_data)
@@ -453,7 +454,7 @@ def evaluateRandomly(encoder, decoder, n=10):
     #
     #     pairs_raw_captions.append(pairs[i].raw_caption)
     # TODO: ERROR here: evaluate() missing 1 required positional argument: 'sentence'
-    output_words, attentions = evaluate(encoder, decoder, pairs_raw_captions)
+    output_words, attentions = evaluate(test_iterator, encoder, decoder, pairs_raw_captions)
     output_sentence = ' '.join(output_words)
     print('<', output_sentence)
     print('')

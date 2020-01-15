@@ -13,9 +13,9 @@ from torchtext.data import Field, RawField, BucketIterator, TabularDataset
 from model.text_ae import Encoder, Decoder, Seq2Seq, Attention
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-MAX_LENGTH = 80
+MAX_LENGTH = 60
 BATCH_SIZE = 128
-LR = 1e-4
+LR = 5e-4
 
 def caption_file():
     config = ConfigParser()
@@ -53,7 +53,7 @@ LABEL.build_vocab(caption_data,
 
 # with open('vocab.json', 'w') as fp:
 #     json.dump(TEXT.vocab.stoi, fp)
-train_data, test_data = caption_data.split(split_ratio=0.75)
+train_data, test_data = caption_data.split(split_ratio=0.90)
 train_data, val_data = train_data.split()
 
 # Create a set of iterators for each split
@@ -66,14 +66,14 @@ train_iterator, val_iterator, test_iterator = BucketIterator.splits(
 
 INPUT_DIM = len(TEXT.vocab)
 OUTPUT_DIM = len(LABEL.vocab)
-ENC_EMB_DIM = 32
-DEC_EMB_DIM = 32
+ENC_EMB_DIM = 64
+DEC_EMB_DIM = 64
 #TODO: change to 1024
 ENC_HID_DIM = 64
 DEC_HID_DIM = 64
 ATTN_DIM = 8
-ENC_DROPOUT = 0.5
-DEC_DROPOUT = 0.5
+ENC_DROPOUT = 0.3
+DEC_DROPOUT = 0.3
 
 
 enc = Encoder(INPUT_DIM, ENC_EMB_DIM, ENC_HID_DIM, drop_out_rate=ENC_DROPOUT)
@@ -108,11 +108,11 @@ PAD_IDX = LABEL.vocab.stoi['<pad>']
 
 criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 
-current_time = str(datetime.datetime.now())
-summary_writer = SummaryWriter(log_dir='logs/' + current_time)
+current_time = datetime.datetime.now().strftime("%m-%d-%Y-%H:%M:%S")
+summary_writer = SummaryWriter(log_dir='logs/text-ae-v2/' + current_time)
 
 
-def train(model: nn.Module, iterator: BucketIterator, optimizer, criterion: nn.Module, clip: float):
+def train(model: nn.Module, iterator: BucketIterator, optimizer, criterion: nn.Module, clip: float, current_epoch: int):
     model.train()
     epoch_loss = 0
 
@@ -133,17 +133,21 @@ def train(model: nn.Module, iterator: BucketIterator, optimizer, criterion: nn.M
         # trg = [(trg sent len - 1) * batch size]
         # output = [(trg sent len - 1) * batch size, output dim]
         loss = criterion(output, trg)
+        step = i + current_epoch * len(iterator)
+        print('training epoch: ', epoch, ', step: ', step , '  *****')
+        epoch_loss += loss.item()
+        summary_writer.add_scalar('train-loss', epoch_loss/(step+1), step+1)
         loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
 
-        epoch_loss += loss.item()
     return epoch_loss / len(iterator)
 
-def eval(model: Seq2Seq, iterator: BucketIterator, criterion: nn.Module, is_test=False):
+def eval(model: Seq2Seq, iterator: BucketIterator, criterion: nn.Module, current_epoch: int, is_test=False):
     model.eval()
     epoch_loss = 0
+
     with torch.no_grad():
         for i, batch in enumerate(iterator):
             src = batch.raw_caption[0]
@@ -160,6 +164,13 @@ def eval(model: Seq2Seq, iterator: BucketIterator, criterion: nn.Module, is_test
 
             loss = criterion(output, trg)
             epoch_loss += loss.item()
+
+            step = i + current_epoch * len(iterator)
+            print('validation epoch: ', epoch_loss / (step+1), ', step: ', step+1, '  *****', 'val loss: ', loss)
+
+            if not is_test:
+                summary_writer.add_scalar('val-loss', epoch_loss / (step+1), step+1)
+
     return epoch_loss / len(iterator)
 
 def epoch_time(start_time: int, end_time: int):
@@ -178,10 +189,8 @@ best_valid_loss = float('inf')
 for epoch in range(N_EPOCHS):
     start_time = time.time()
 
-    train_loss = train(model, train_iterator, optimizer, criterion, CLIP)
-    valid_loss = eval(model, val_iterator, criterion)
-    summary_writer.add_scalar('train-loss', train_loss, epoch)
-    summary_writer.add_scalar('val-loss', valid_loss, epoch)
+    train_loss = train(model, train_iterator, optimizer, criterion, CLIP, epoch)
+    valid_loss = eval(model, val_iterator, criterion, epoch)
 
     end_time = time.time()
     epoch_mins, epoch_secs = epoch_time(start_time, end_time)
@@ -191,13 +200,15 @@ for epoch in range(N_EPOCHS):
         torch.save(model.state_dict(), MODEL_PATH)
 
     print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
-    print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):7.3f}')
-    print(f'\t Val. Loss: {valid_loss:.3f} |  Val. PPL: {math.exp(valid_loss):7.3f}')
+    summary_writer.add_scalar('epoch avg. train loss', train_loss, epoch)
+    summary_writer.add_scalar('epoch avg. valid loss', valid_loss, epoch)
+    print(f'\tTrain Loss: {train_loss:.3f}')
+    print(f'\t Val. Loss: {valid_loss:.3f}')
 
-test_loss = eval(model, test_iterator, criterion, is_test=True)
+test_loss = eval(model, test_iterator, criterion, 0, is_test=True)
 summary_writer.add_scalar('test_loss', test_loss)
 
-print(f'| Test Loss: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.3f} |')
+print(f'| Test Loss: {test_loss:.3f} |')
 
 
 
