@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from model.pointnet_encoder import PCAE
+from model.pointnet_ae import PCAE
 import visualize
 from configparser import ConfigParser
 import os

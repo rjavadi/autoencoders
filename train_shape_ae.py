@@ -7,12 +7,13 @@ import torch.optim as optim
 import numpy as np
 import argparse
 from configparser import ConfigParser
-from model.pointnet_encoder import PCAE
+from model.pointnet_ae import PCAE
 from dataset import ShapeNetDataSet
 from fastprogress import master_bar, progress_bar
 from chamfer_distance import ChamferDistance
 from torch.utils.tensorboard import SummaryWriter
 import datetime
+import h5py
 
 
 config_file_name = "config.ini"
@@ -68,10 +69,12 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             model = model.train()
             reconstructed = model(points)
             rand = np.random.randint(0, 100)
-            if rand < 10:
-                np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_train.pts'),
-                           points[0].detach().cpu().numpy(),
-                           delimiter=' ', fmt='%1.4e')
+            if rand < 5:
+                pcfile = h5py.File('reconstructed/' + str(batch_number) +'_' + str(epoch) + '_train.h5', 'w')
+                pcfile.create_dataset('shape_' + str(batch_number) +'_' + str(epoch), data=points[0].detach().cpu().numpy())
+                # np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_train.pts'),
+                #            points[0].detach().cpu().numpy(),
+                #            delimiter=' ', fmt='%1.4e')
 
             dist1, dist2 = ch_distance(points, reconstructed)
             loss = (torch.mean(dist1)) + (torch.mean(dist2))
@@ -98,12 +101,21 @@ def train(dataset_dir, num_of_points, batch_size, epochs, learning_rate, output_
             dist1, dist2 = ch_distance(points, reconstructed)
             loss = (torch.mean(dist1)) + (torch.mean(dist2))
             if loss > 0.5:
-                np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_val_ground.pts'),
-                           points.detach().cpu().numpy(),
-                           delimiter=' ', fmt='%1.4e')
-                np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_val_constructed.pts'),
-                           reconstructed.detach().cpu().numpy(),
-                           delimiter=' ', fmt='%1.4e')
+                # np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_val_ground.pts'),
+                #            points.detach().cpu().numpy(),
+                #            delimiter=' ', fmt='%1.4e')
+                # np.savetxt(os.path.join(output_dir, str(batch_number) + str(epoch) + '_val_constructed.pts'),
+                #            reconstructed.detach().cpu().numpy(),
+                #            delimiter=' ', fmt='%1.4e')
+
+                pcfile = h5py.File('reconstructed/' + str(batch_number) + '_' + str(epoch) + '_val_gtruth.h5', 'w')
+                pcfile.create_dataset('shape_' + str(batch_number) + '_' + str(epoch),
+                                      data=points.detach().cpu().numpy())
+
+                pcfile = h5py.File('reconstructed/' + str(batch_number) + '_' + str(epoch) + '_val.h5', 'w')
+                pcfile.create_dataset('shape_' + str(batch_number) + '_' + str(epoch),
+                                      data=reconstructed.detach().cpu().numpy())
+
             epoch_test_loss.append(loss.cpu().item())
             epoch_test_loss.append(loss.item())
             mb.write('Epoch %s: train loss: %s, val loss: %s'
@@ -130,7 +142,7 @@ if __name__ == '__main__':
     parser.add_argument('output_dir', type=str, help='output folder')
     parser.add_argument('--number_of_points', type=int, default=1024, help='number of points per cloud')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
-    parser.add_argument('--epochs', type=int, default=3, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=10, help='number of epochs')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
 
     args = parser.parse_args()
