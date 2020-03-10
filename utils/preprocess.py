@@ -69,16 +69,24 @@ def clean_text():
     data_frame.to_csv('captions_processed.csv')
     file.close()
 
-
+def create_tables_chairs_ds():
+    config = ConfigParser()
+    config.read(config_file_name)
+    print(config.sections())
+    cap_file = config.get('data', 'captions_path')
+    orig_cap_df = pd.read_csv(cap_file)
+    updated_cap_df = orig_cap_df[(orig_cap_df['top_synset_id'] == '3001627') | (orig_cap_df['top_synset_id'] == '4379243')]
+    updated_cap_df.to_csv('table_chairs_ds.csv')
 
 
 if __name__ == "__main__":
     # config = ConfigParser()
     # config.read(config_file_name)
     # cap_file = config.get('data', 'captions_path')
-    print(remove_punc_str("2 apples, 3 bananas, 4 birds...!"))
-    cap_csv = pd.read_csv(os.path.join('../data', 'captions_processed.csv'))
+    # print(remove_punc_str("2 apples, 3 bananas, 4 birds...!"))
+    # cap_csv = pd.read_csv(os.path.join('../data', 'captions_processed.csv'))
     # cap_csv['raw_caption'] = cap_csv['raw_caption'].apply(remove_punc_str)
     # cap_csv['raw_label'] = cap_csv['raw_caption']
-    cap_csv = remove_long_desc(cap_csv, 60)
-    cap_csv.to_csv('../data/captions_processed.csv')
+    # cap_csv = remove_long_desc(cap_csv, 60)
+    # cap_csv.to_csv('../data/captions_processed.csv')
+    create_tables_chairs_ds()

@@ -66,8 +66,8 @@ train_iterator, val_iterator, test_iterator = BucketIterator.splits(
 
 INPUT_DIM = len(TEXT.vocab)
 OUTPUT_DIM = len(LABEL.vocab)
-ENC_EMB_DIM = 64
-DEC_EMB_DIM = 64
+ENC_EMB_DIM = 128
+DEC_EMB_DIM = 128
 #TODO: change to 1024
 ENC_HID_DIM = 64
 DEC_HID_DIM = 64
@@ -119,6 +119,8 @@ def train(model: nn.Module, iterator: BucketIterator, optimizer, criterion: nn.M
     for i, batch in enumerate(iterator):
         src = batch.raw_caption[0]
         trg = batch.raw_label[0]
+        model_id = batch.model_id
+        print('**** ', model_id)
 
         optimizer.zero_grad()
 
@@ -134,7 +136,6 @@ def train(model: nn.Module, iterator: BucketIterator, optimizer, criterion: nn.M
         # output = [(trg sent len - 1) * batch size, output dim]
         loss = criterion(output, trg)
         step = i + current_epoch * len(iterator)
-        print('training epoch: ', epoch, ', step: ', step , '  *****')
         epoch_loss += loss.item()
         summary_writer.add_scalar('train-loss', epoch_loss/(step+1), step+1)
         loss.backward()
@@ -166,7 +167,6 @@ def eval(model: Seq2Seq, iterator: BucketIterator, criterion: nn.Module, current
             epoch_loss += loss.item()
 
             step = i + current_epoch * len(iterator)
-            print('validation epoch: ', epoch_loss / (step+1), ', step: ', step+1, '  *****', 'val loss: ', loss)
 
             if not is_test:
                 summary_writer.add_scalar('val-loss', epoch_loss / (step+1), step+1)
@@ -210,24 +210,4 @@ summary_writer.add_scalar('test_loss', test_loss)
 
 print(f'| Test Loss: {test_loss:.3f} |')
 
-
-
-# def load_dataset():
-#     spacy_en = spacy.load('en')
-
-# def train(input_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_len=MAX_LENGTH):
-#     encoder_hidden = encoder.initHidden()
-#
-#     encoder_optimizer.zero_grad()
-#     decoder_optimizer.zero_grad()
-#
-#     input_len = input_tensor.size(0)
-#     target_len = input_len
-#
-#     encoder_outputs = torch.zeros(max_len, encoder.hidden_size, device=device)
-#     loss = 0
-#
-#     for cap in range(input_len):
-#         encoder_output, encoder_hidden = encoder(input_tensor[cap], encoder_hidden)
-#         encoder_outputs[cap] = encoder_output[0, 0]
 
